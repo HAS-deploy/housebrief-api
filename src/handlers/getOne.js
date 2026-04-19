@@ -1,9 +1,9 @@
 import { ok, err } from "../lib/http.js";
-import { verifyUserToken } from "../lib/auth.js";
+import { verifyActiveUserToken } from "../lib/auth.js";
 import { getItem, keys } from "../lib/ddb.js";
 
 export async function handler(event) {
-    const user = verifyUserToken(event.headers?.authorization || event.headers?.Authorization);
+    const user = await verifyActiveUserToken(event.headers?.authorization || event.headers?.Authorization);
     if (!user) return err("unauthorized", 401);
 
     const id = event.pathParameters?.id;

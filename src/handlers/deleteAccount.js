@@ -1,14 +1,18 @@
 import { ok, err } from "../lib/http.js";
-import { verifyUserToken } from "../lib/auth.js";
+import { verifyActiveUserToken } from "../lib/auth.js";
 import { queryBegins, updateItem, keys } from "../lib/ddb.js";
 
 /**
  * App Store 5.1.1(v): account deletion required. We anonymize rather than
  * hard-delete because submissions are part of our acquisition audit trail
  * and (where a contract was signed) may be legally-retainable records.
+ *
+ * After this runs, verifyActiveUserToken rejects the token on every
+ * subsequent authed request — same token, but the profile now has
+ * deletedAt set, so the check fails.
  */
 export async function handler(event) {
-    const user = verifyUserToken(event.headers?.authorization || event.headers?.Authorization);
+    const user = await verifyActiveUserToken(event.headers?.authorization || event.headers?.Authorization);
     if (!user) return err("unauthorized", 401);
 
     const now = new Date().toISOString();

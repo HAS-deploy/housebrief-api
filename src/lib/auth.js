@@ -32,6 +32,21 @@ export function verifyUserToken(authHeader) {
 }
 
 /**
+ * Stronger check: HMAC-verify the token AND confirm the user profile still
+ * exists and hasn't been deleted. Use this on any endpoint that should
+ * reject tokens from deleted accounts (list-mine, get-one, upload-url,
+ * delete-account — i.e., everything token-gated except the open submit
+ * endpoint).
+ */
+export async function verifyActiveUserToken(authHeader) {
+    const basic = verifyUserToken(authHeader);
+    if (!basic) return null;
+    const profile = await getItem(keys.userProfile(basic.userId));
+    if (!profile || profile.deletedAt) return null;
+    return { userId: basic.userId, profile };
+}
+
+/**
  * Admin auth: long random tokens stored in Secrets Manager as a JSON map
  * { "<token>": { "role": "acquisitions|compliance|admin|dispo", "name": "..." } }
  * Simple, rotatable without a deploy. For 1–5 admin users this is plenty.

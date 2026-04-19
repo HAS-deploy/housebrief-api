@@ -2,7 +2,7 @@ import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { ulid } from "ulid";
 import { ok, err, json } from "../lib/http.js";
-import { verifyUserToken } from "../lib/auth.js";
+import { verifyActiveUserToken } from "../lib/auth.js";
 import { getItem, keys } from "../lib/ddb.js";
 
 const s3 = new S3Client({});
@@ -12,7 +12,7 @@ const ALLOWED_TYPES = new Set(["image/jpeg", "image/png", "image/heic", "applica
 const MAX_BYTES = 15 * 1024 * 1024;
 
 export async function handler(event) {
-    const user = verifyUserToken(event.headers?.authorization || event.headers?.Authorization);
+    const user = await verifyActiveUserToken(event.headers?.authorization || event.headers?.Authorization);
     if (!user) return err("unauthorized", 401);
 
     const id = event.pathParameters?.id;
