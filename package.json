@@ -2,6 +2,7 @@
   "name": "housebrief-api",
   "version": "0.1.0",
   "private": true,
+  "type": "module",
   "description": "HouseBrief backend — Lambda + DynamoDB + S3 + Claude analysis. Principal-buyer intake, not a broker.",
   "scripts": {
     "deploy": "serverless deploy --stage prod",
