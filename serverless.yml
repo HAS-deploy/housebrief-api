@@ -1,0 +1,178 @@
+service: housebrief-api
+
+frameworkVersion: "3"
+
+provider:
+  name: aws
+  runtime: nodejs20.x
+  region: us-east-1
+  stage: ${opt:stage, 'dev'}
+  memorySize: 512
+  timeout: 20
+  environment:
+    STAGE: ${self:provider.stage}
+    TABLE: ${self:service}-${self:provider.stage}
+    UPLOAD_BUCKET: ${self:service}-${self:provider.stage}-uploads
+    CLAUDE_SECRET_ID: housebrief/anthropic-api-key
+    ADMIN_TOKENS_SECRET_ID: housebrief/admin-tokens
+  httpApi:
+    cors:
+      allowedOrigins:
+        - "*"
+      allowedHeaders:
+        - Content-Type
+        - Authorization
+        - X-HouseBrief-Token
+      allowedMethods:
+        - GET
+        - POST
+        - PATCH
+        - DELETE
+        - OPTIONS
+  iam:
+    role:
+      statements:
+        - Effect: Allow
+          Action:
+            - dynamodb:GetItem
+            - dynamodb:PutItem
+            - dynamodb:UpdateItem
+            - dynamodb:DeleteItem
+            - dynamodb:Query
+            - dynamodb:Scan
+          Resource:
+            - Fn::GetAtt: [SubmissionsTable, Arn]
+            - Fn::Join: ["/", [Fn::GetAtt: [SubmissionsTable, Arn], "index/*"]]
+        - Effect: Allow
+          Action:
+            - s3:PutObject
+            - s3:GetObject
+            - s3:DeleteObject
+          Resource:
+            - Fn::Join: ["/", [Fn::GetAtt: [UploadBucket, Arn], "*"]]
+        - Effect: Allow
+          Action:
+            - secretsmanager:GetSecretValue
+          Resource:
+            - arn:aws:secretsmanager:${self:provider.region}:*:secret:housebrief/*
+
+functions:
+  # --- consumer ---
+  submit:
+    handler: src/handlers/submit.handler
+    events:
+      - httpApi: { method: POST, path: /v1/submissions }
+
+  listMine:
+    handler: src/handlers/listMine.handler
+    events:
+      - httpApi: { method: GET, path: /v1/submissions/mine }
+
+  getOne:
+    handler: src/handlers/getOne.handler
+    events:
+      - httpApi: { method: GET, path: /v1/submissions/{id} }
+
+  uploadUrl:
+    handler: src/handlers/uploadUrl.handler
+    events:
+      - httpApi: { method: POST, path: /v1/submissions/{id}/upload-url }
+
+  stateCheck:
+    handler: src/handlers/stateCheck.handler
+    events:
+      - httpApi: { method: POST, path: /v1/state-check }
+
+  deleteAccount:
+    handler: src/handlers/deleteAccount.handler
+    events:
+      - httpApi: { method: DELETE, path: /v1/account }
+
+  # --- admin ---
+  adminList:
+    handler: src/handlers/adminList.handler
+    events:
+      - httpApi: { method: GET, path: /admin/v1/queue }
+
+  adminDetail:
+    handler: src/handlers/adminDetail.handler
+    events:
+      - httpApi: { method: GET, path: /admin/v1/submissions/{id} }
+
+  adminUpdateStatus:
+    handler: src/handlers/adminUpdateStatus.handler
+    events:
+      - httpApi: { method: PATCH, path: /admin/v1/submissions/{id} }
+
+  adminAnalyze:
+    handler: src/handlers/adminAnalyze.handler
+    timeout: 30
+    events:
+      - httpApi: { method: POST, path: /admin/v1/submissions/{id}/analyze }
+
+resources:
+  Resources:
+    SubmissionsTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: ${self:provider.environment.TABLE}
+        BillingMode: PAY_PER_REQUEST
+        AttributeDefinitions:
+          - AttributeName: pk
+            AttributeType: S
+          - AttributeName: sk
+            AttributeType: S
+          - AttributeName: gsi1pk
+            AttributeType: S
+          - AttributeName: gsi1sk
+            AttributeType: S
+        KeySchema:
+          - AttributeName: pk
+            KeyType: HASH
+          - AttributeName: sk
+            KeyType: RANGE
+        GlobalSecondaryIndexes:
+          - IndexName: GSI1
+            KeySchema:
+              - AttributeName: gsi1pk
+                KeyType: HASH
+              - AttributeName: gsi1sk
+                KeyType: RANGE
+            Projection:
+              ProjectionType: ALL
+        PointInTimeRecoverySpecification:
+          PointInTimeRecoveryEnabled: true
+        SSESpecification:
+          SSEEnabled: true
+
+    UploadBucket:
+      Type: AWS::S3::Bucket
+      Properties:
+        BucketName: ${self:provider.environment.UPLOAD_BUCKET}
+        BucketEncryption:
+          ServerSideEncryptionConfiguration:
+            - ServerSideEncryptionByDefault:
+                SSEAlgorithm: AES256
+        PublicAccessBlockConfiguration:
+          BlockPublicAcls: true
+          BlockPublicPolicy: true
+          IgnorePublicAcls: true
+          RestrictPublicBuckets: true
+        LifecycleConfiguration:
+          Rules:
+            - Id: expire-stale-uploads
+              Status: Enabled
+              ExpirationInDays: 180
+        CorsConfiguration:
+          CorsRules:
+            - AllowedOrigins: ["*"]
+              AllowedMethods: [PUT]
+              AllowedHeaders: ["*"]
+              MaxAge: 3000
+
+  Outputs:
+    ApiUrl:
+      Value:
+        Fn::Sub: "https://${HttpApi}.execute-api.${AWS::Region}.amazonaws.com"
+      Export:
+        Name: ${self:service}-${self:provider.stage}-api-url

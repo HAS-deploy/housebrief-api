@@ -1,0 +1,24 @@
+{
+  "name": "housebrief-api",
+  "version": "0.1.0",
+  "private": true,
+  "description": "HouseBrief backend — Lambda + DynamoDB + S3 + Claude analysis. Principal-buyer intake, not a broker.",
+  "scripts": {
+    "deploy": "serverless deploy --stage prod",
+    "deploy:dev": "serverless deploy --stage dev",
+    "logs": "serverless logs -f",
+    "test": "node --test src/lib/*.test.js"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.40.0",
+    "@aws-sdk/client-dynamodb": "^3.700.0",
+    "@aws-sdk/client-s3": "^3.700.0",
+    "@aws-sdk/client-secrets-manager": "^3.700.0",
+    "@aws-sdk/lib-dynamodb": "^3.700.0",
+    "@aws-sdk/s3-request-presigner": "^3.700.0",
+    "ulid": "^2.3.0"
+  },
+  "devDependencies": {
+    "serverless": "^3.40.0"
+  }
+}

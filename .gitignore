@@ -1,0 +1,9 @@
+node_modules/
+.serverless/
+.env
+.env.local
+.env.*.local
+*.p8
+*.p12
+*.pem
+.DS_Store
