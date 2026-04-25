@@ -17,6 +17,14 @@ provider:
     CLAUDE_SECRET_ID: housebrief/anthropic-api-key
     ADMIN_TOKENS_SECRET_ID: housebrief/admin-tokens
     USER_TOKEN_SECRET: ${ssm:/housebrief/prod/user-token-secret}
+    NEW_SUBMISSION_TOPIC_ARN:
+      Ref: NewSubmissionTopic
+    ADMIN_BASE_URL: ${self:custom.adminBaseUrl.${self:provider.stage}, ''}
+
+custom:
+  adminBaseUrl:
+    prod: https://housebrief-admin.vercel.app
+    staging: https://housebrief-admin-staging.vercel.app
   httpApi:
     cors:
       allowedOrigins:
@@ -57,15 +65,37 @@ provider:
             - secretsmanager:GetSecretValue
           Resource:
             - arn:aws:secretsmanager:${self:provider.region}:*:secret:housebrief/*
+        - Effect: Allow
+          Action:
+            - sns:Publish
+          Resource:
+            - Ref: NewSubmissionTopic
+        - Effect: Allow
+          Action:
+            - lambda:InvokeFunction
+          Resource:
+            # async fire from submit -> analyzeAndNotify
+            - Fn::Sub: "arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${self:service}-${self:provider.stage}-analyzeAndNotify"
 
 functions:
   # --- consumer ---
   submit:
     handler: src/handlers/submit.handler
+    environment:
+      NOTIFY_FN_NAME: ${self:service}-${self:provider.stage}-analyzeAndNotify
     events:
       - httpApi:
           method: POST
           path: /v1/submissions
+
+  # Async worker fired by submit. Runs Claude analysis, stores result,
+  # updates submission scores, and publishes to SNS for email alert.
+  analyzeAndNotify:
+    handler: src/handlers/analyzeAndNotify.handler
+    timeout: 60
+    environment:
+      SNS_TOPIC_ARN:
+        Ref: NewSubmissionTopic
 
   listMine:
     handler: src/handlers/listMine.handler
@@ -166,6 +196,22 @@ resources:
           PointInTimeRecoveryEnabled: true
         SSESpecification:
           SSEEnabled: true
+
+    # Email alert channel for new submissions. Subscription confirmation
+    # must be clicked in the target inbox once after first deploy.
+    NewSubmissionTopic:
+      Type: AWS::SNS::Topic
+      Properties:
+        TopicName: ${self:service}-${self:provider.stage}-new-submissions
+        DisplayName: HouseBrief New Submissions
+
+    NewSubmissionEmailSub:
+      Type: AWS::SNS::Subscription
+      Properties:
+        TopicArn:
+          Ref: NewSubmissionTopic
+        Protocol: email
+        Endpoint: mcmurtrey.a@gmail.com
 
     UploadBucket:
       Type: AWS::S3::Bucket

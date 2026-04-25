@@ -1,8 +1,11 @@
 import { ulid } from "ulid";
+import { LambdaClient, InvokeCommand } from "@aws-sdk/client-lambda";
 import { ok, err, json } from "../lib/http.js";
 import { verifyUserToken, signInOrSignUp } from "../lib/auth.js";
 import { putItem, keys } from "../lib/ddb.js";
 import { canSubmit, rule } from "../lib/stateRules.js";
+
+const lambda = new LambdaClient({});
 
 export async function handler(event) {
     const body = json(event);
@@ -88,6 +91,22 @@ export async function handler(event) {
         addressShort: `${body.addressLine1}, ${body.city} ${stateCode}`,
         createdAt: now,
     });
+
+    // Fire-and-forget: kick off Claude analysis + owner email in a separate
+    // Lambda. We don't await — the async invoke should take <100ms to hand
+    // off. If it fails we log but don't block the seller's response.
+    const notifyFn = process.env.NOTIFY_FN_NAME;
+    if (notifyFn) {
+        try {
+            await lambda.send(new InvokeCommand({
+                FunctionName: notifyFn,
+                InvocationType: "Event",
+                Payload: Buffer.from(JSON.stringify({ submissionId })),
+            }));
+        } catch (e) {
+            console.warn(`[submit] failed to enqueue analyzeAndNotify for ${submissionId}:`, e.message);
+        }
+    }
 
     return ok({
         submissionId,
